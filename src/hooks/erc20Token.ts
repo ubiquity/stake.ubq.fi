@@ -1,4 +1,4 @@
-import { erc20Abi } from "viem";
+import { erc20Abi } from "../lib/viem-optimized";
 import { useReadContracts } from "wagmi";
 
 export function useErc20Token(tokenAddress: `0x${string}` | undefined) {

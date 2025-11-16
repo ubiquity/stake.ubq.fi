@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { WagmiProvider, createConfig, http } from "wagmi";
-import { type Chain } from "viem/chains";
+import { type Chain } from "./lib/viem-optimized";
 import { injected } from "@wagmi/connectors";
 import { mainnet, anvil } from "wagmi/chains";
 import App from "./App.tsx";

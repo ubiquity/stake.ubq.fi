@@ -1,7 +1,7 @@
 import { injected, useAccount, useChains, useConnect, useDisconnect } from "wagmi";
 import { ICONS } from "./iconography.tsx";
 import { PoolDisplay } from "./pool-display.tsx";
-import { BaseError } from "viem";
+import { BaseError } from "../lib/viem-optimized";
 import { useStatusMessage } from "../context/status-message.tsx";
 
 const LogoSpan = () => <span id="header-logo-wrapper">{ICONS.DAO_LOGO}</span>;
