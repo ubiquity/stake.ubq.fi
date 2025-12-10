@@ -28,12 +28,13 @@ export function useErc20Token(tokenAddress: `0x${string}` | undefined) {
   return {
     ...tokenInfo,
     data:
-      !tokenInfo.data || tokenInfo.data[0].error || tokenInfo.data[1].error || tokenInfo.data[2].error
+      !tokenAddress || !tokenInfo.data || tokenInfo.data[0].error || tokenInfo.data[1].error || tokenInfo.data[2].error
         ? undefined
         : {
+            address: tokenAddress,
             name: tokenInfo.data[0].result,
             symbol: tokenInfo.data[1].result,
             decimals: tokenInfo.data[2].result,
           },
-  } as ReturnType<typeof useReadContracts> & { data: { name: string; symbol: string; decimals: number } | undefined };
+  };
 }

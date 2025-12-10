@@ -1,0 +1,17 @@
+node_modules
+.pnp
+.pnp.js
+
+# Build outputs
+dist
+build
+coverage
+
+# Misc
+.DS_Store
+*.log
+*.lock
+
+# Environment
+.env
+.env.dev
