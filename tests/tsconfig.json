@@ -1,11 +1,17 @@
 {
   "compilerOptions": {
-    "types": ["bun-types"],
+    "types": ["bun-types", "node"],
     "module": "ESNext",
     "target": "ES2022",
     "moduleResolution": "bundler",
     "strict": true,
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "paths": {
+      "~/*": ["../src/*"]
+    },
+    "baseUrl": "."
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "**/*.tsx"]
 }
