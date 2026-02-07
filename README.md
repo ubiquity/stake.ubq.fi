@@ -95,12 +95,25 @@ cast rpc evm_mine
 
 ## 🔧 Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `bun run dev` | Dev server (MODE=dev) using remote RPC |
-| `bun run local` | Dev server (MODE=local-node) enabling `anvil` chain id 31337 |
-| `bun run build` | Production build to `dist/` |
-| `bun run lint` | ESLint over the repo |
+| Script            | Purpose                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| `bun run dev`     | Dev server (MODE=dev) using remote RPC                       |
+| `bun run local`   | Dev server (MODE=local-node) enabling `anvil` chain id 31337 |
+| `bun run build`   | Production build to `dist/`                                  |
+| `bun run preview` | Serve `dist/` locally for preview (port `4173`)              |
+| `bun run lint`    | ESLint over the repo                                         |
+
+## 🧪 E2E Smoke (Playwright)
+
+Smoke tests run in Chromium only and can target either a dev server or a built preview.
+
+```bash
+# Dev mode (starts Vite dev server on http://localhost:5173)
+E2E_MODE=dev bun run e2e
+
+# Preview mode (builds then serves on http://localhost:4173)
+E2E_MODE=preview bun run e2e
+```
 
 ## 🌐 RPC Resolution
 
