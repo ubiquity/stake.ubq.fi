@@ -1,8 +1,8 @@
 import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { mainnet, anvil, type Chain } from "viem/chains";
-import { isLocalNode, RPC_URL } from "../constants/config";
-import { http, injected, type Transport } from "wagmi";
+import { isLocalNode, RPC_URL, RPC_URL_CANDIDATES } from "../constants/config";
+import { fallback, http, injected, type Transport } from "wagmi";
 
 export const supportedChains: readonly [Chain, ...Chain[]] = isLocalNode ? [mainnet, anvil] : [mainnet];
 
@@ -13,11 +13,14 @@ type TransportsMap = Record<ChainId, Transport>;
 const transports = supportedChains.reduce<TransportsMap>((acc, chain) => {
   // In local-node mode, use raw RPC_URL without chain ID suffix for ALL chains
   // In production/dev mode, append chain ID
-  const rpcUrl = isLocalNode ? RPC_URL : `${RPC_URL}/${chain.id}`;
+  if (isLocalNode) {
+    acc[chain.id] = http(RPC_URL, { batch: false });
+    return acc;
+  }
 
-  acc[chain.id] = http(rpcUrl, {
-    batch: isLocalNode ? false : true,
-  });
+  const candidates = RPC_URL_CANDIDATES.map((base) => `${base}/${chain.id}`);
+  const transports = candidates.map((url) => http(url, { batch: true }));
+  acc[chain.id] = transports.length === 1 ? transports[0] : fallback(transports);
   return acc;
 }, {} as TransportsMap);
 
