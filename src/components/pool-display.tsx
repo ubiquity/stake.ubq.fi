@@ -1,8 +1,13 @@
 import { useAppKitAccount } from "@reown/appkit/react";
-import { useReadContract } from "wagmi";
+import { useReadContract, useWriteContract, usePublicClient } from "wagmi";
+import { parseUnits, BaseError } from "viem";
 import { stakingContract } from "../constants/contracts";
+import erc20Abi from "../abis/erc20";
 import { useErc20Token } from "../hooks/erc20Token";
 import { useState } from "react";
+import { waitForTransactionReceipt } from "viem/actions";
+import { useStatusMessageState, useStatusMessageDispatch } from "../context/status-message.tsx";
+import { useToast } from "../ui/toast";
 import { Button } from "./button";
 import { useStaking } from "../hooks/useStaking";
 import { safeFormatUnits, safeParseUnits, calculatePoolRewardPerDay, calculateUserPoolShare, calculateUserRewardPerDay } from "../utils/pool";
@@ -43,6 +48,12 @@ type WriteAction = (typeof WRITE_ACTION)[keyof typeof WRITE_ACTION];
 
 export function PoolDisplay({ poolId = 0n }: PoolDisplayProps) {
   const { address, isConnected } = useAppKitAccount();
+  const publicClient = usePublicClient();
+  const dispatch = useStatusMessageDispatch();
+  const setErrorMessage = (message: string) => dispatch({ type: "setError", message });
+  const setSuccessMessage = (message: string) => dispatch({ type: "setSuccess", message });
+  const clearMessages = () => dispatch({ type: "clear" });
+  const { toast } = useToast();
   const [stakeAmount, setStakeAmount] = useState("");
   const [unstakeAmount, setUnstakeAmount] = useState("");
   const [currentWriteAction, setCurrentWriteAction] = useState<WriteAction>(WRITE_ACTION.NONE);
@@ -84,6 +95,47 @@ export function PoolDisplay({ poolId = 0n }: PoolDisplayProps) {
     poolInfo.error && poolInfo.fetchStatus === "idle",
   ];
 
+  const onSuccess = async (hash: `0x${string}`) => {
+    if (!publicClient) return;
+    try {
+      const receipt = await waitForTransactionReceipt(publicClient, { hash });
+      if (receipt.status === "success") {
+        toast("Transaction confirmed", "success");
+        setSuccessMessage("Transaction confirmed");
+      } else {
+        toast("Transaction reverted", "error", 0);
+        setErrorMessage("Transaction reverted");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Transaction failed";
+      toast(message, "error", 0);
+      setErrorMessage(message);
+    }
+    staking.refetchAll();
+  };
+
+  const onError = (error: unknown) => {
+    let message: string;
+    if (error instanceof BaseError) {
+      message = error.shortMessage;
+    } else if (error instanceof Error) {
+      message = error.message;
+    } else {
+      message = "An unknown error occurred";
+    }
+    toast(message, "error", 0);
+    setErrorMessage(message);
+  };
+
+  if (
+    stakingSettings.error ||
+    lpTokenInfo.error ||
+    rewardTokenInfo.error ||
+    poolInfo.error ||
+    (isConnected && (staking.data.pendingRewards?.error || staking.data.userInfo?.error || staking.data.allowance?.error || staking.data.balance?.error))
+  ) {
+    return <div className="pool-container">Loading failed...</div>;
+  }
   const hasRealError = publicDataErrors.some((err) => err);
 
   const isLoadingPublicData = stakingSettings.isLoading || lpTokenInfo.isLoading || rewardTokenInfo.isLoading || poolInfo.isLoading;
