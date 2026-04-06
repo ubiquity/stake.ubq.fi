@@ -1,64 +1,53 @@
-import { createContext, useContext, useReducer } from "react";
+import { createContext, useContext, useReducer, type Dispatch } from "react";
 
 type StatusMessage = {
   successMessage: string | null;
   errorMessage: string | null;
 };
 
-type StatusMessageContext = {
-  successMessage: string | null;
-  errorMessage: string | null;
-  setSuccessMessage: (msg: string | null) => void;
-  setErrorMessage: (msg: string | null) => void;
-  clearMessages: () => void;
-};
-
 type StatusMessageAction = { type: "setSuccess"; message: string | null } | { type: "setError"; message: string | null } | { type: "clear" };
 
-const StatusMessageContext = createContext<StatusMessageContext>({
-  successMessage: null,
-  errorMessage: null,
-  setSuccessMessage: () => {},
-  setErrorMessage: () => {},
-  clearMessages: () => {},
-});
+const StatusMessageStateContext = createContext<StatusMessage | null>(null);
+const StatusMessageDispatchContext = createContext<Dispatch<StatusMessageAction> | null>(null);
 
-export const useStatusMessage = () => {
-  return useContext(StatusMessageContext);
+export const useStatusMessageState = () => {
+  const context = useContext(StatusMessageStateContext);
+  if (!context) {
+    throw new Error("useStatusMessageState must be used within StatusMessageProvider");
+  }
+  return context;
+};
+
+export const useStatusMessageDispatch = () => {
+  const context = useContext(StatusMessageDispatchContext);
+  if (!context) {
+    throw new Error("useStatusMessageDispatch must be used within StatusMessageProvider");
+  }
+  return context;
 };
 
 export function StatusMessageProvider({ children }: { children: React.ReactNode }) {
-  const [statusMessage, dispatch] = useReducer(statusMessageReducer, {
+  const [state, dispatch] = useReducer(statusMessageReducer, {
     successMessage: null,
     errorMessage: null,
   });
 
-  const setSuccessMessage = (msg: string | null) => {
-    dispatch({ type: "setSuccess", message: msg });
-  };
-  const setErrorMessage = (msg: string | null) => {
-    dispatch({ type: "setError", message: msg });
-  };
-  const clearMessages = () => {
-    dispatch({ type: "clear" });
-  };
-
-  return <StatusMessageContext value={{ ...statusMessage, setSuccessMessage, setErrorMessage, clearMessages }}>{children}</StatusMessageContext>;
+  return (
+    <StatusMessageDispatchContext.Provider value={dispatch}>
+      <StatusMessageStateContext.Provider value={state}>{children}</StatusMessageStateContext.Provider>
+    </StatusMessageDispatchContext.Provider>
+  );
 }
 
-function statusMessageReducer(_: StatusMessage, action: StatusMessageAction): StatusMessage {
+function statusMessageReducer(state: StatusMessage, action: StatusMessageAction): StatusMessage {
   switch (action.type) {
-    case "setSuccess": {
+    case "setSuccess":
       return { successMessage: action.message, errorMessage: null };
-    }
-    case "setError": {
+    case "setError":
       return { successMessage: null, errorMessage: action.message };
-    }
-    case "clear": {
+    case "clear":
       return { successMessage: null, errorMessage: null };
-    }
-    default: {
-      throw Error("Unknown action");
-    }
+    default:
+      return state;
   }
 }

@@ -1,0 +1,83 @@
+/* Container for connected wallet buttons */
+.wallet-connect-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Base button styles */
+.wallet-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: #007bff;
+  color: white;
+}
+
+.wallet-button:hover:not(:disabled) {
+  background-color: #0056b3;
+  transform: translateY(-1px);
+}
+
+.wallet-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.wallet-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Warning button variant (for unsupported network) */
+.wallet-button--warning {
+  background-color: #ff444420;
+  color: #ff4444;
+  border: 1px solid #ff444440;
+}
+
+.wallet-button--warning:hover:not(:disabled) {
+  background-color: #ff444430;
+  border-color: #ff444460;
+}
+
+/* Disconnect/Connected button variant */
+.wallet-button--connected {
+  background-color: #28a745;
+}
+
+.wallet-button--connected:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+/* Error/Not configured button variant */
+.wallet-button--error {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+/* Icon styling within buttons */
+.wallet-button svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* Responsive design */
+@media (max-width: 640px) {
+  .wallet-connect-container {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .wallet-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
