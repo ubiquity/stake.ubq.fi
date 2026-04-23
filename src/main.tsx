@@ -5,6 +5,7 @@ import { WagmiProvider } from "wagmi";
 import App from "./App.tsx";
 import { grid } from "./the-grid";
 import { StatusMessageProvider } from "./context/status-message.tsx";
+import { ToastProvider } from "./ui/toast.tsx";
 import { wagmiAdapter } from "./wallet/config";
 
 const queryClient = new QueryClient();
@@ -25,7 +26,9 @@ createRoot(rootElement).render(
     <WagmiProvider config={wagmiAdapter.wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <StatusMessageProvider>
-          <App />
+          <ToastProvider>
+            <App />
+          </ToastProvider>
         </StatusMessageProvider>
       </QueryClientProvider>
     </WagmiProvider>

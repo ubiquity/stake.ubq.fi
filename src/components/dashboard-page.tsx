@@ -3,7 +3,9 @@ import { ICONS } from "./iconography.tsx";
 import { PoolDisplay } from "./pool-display.tsx";
 import { ConnectWalletButton } from "./connect-wallet.tsx";
 import { supportedChains } from "../wallet/config.ts";
-import { useStatusMessageState } from "../context/status-message.tsx";
+import { useStatusMessageState, useStatusMessageDispatch } from "../context/status-message.tsx";
+import { useToast } from "../ui/toast.tsx";
+import { useEffect, useRef } from "react";
 
 const LogoSpan = () => <span id="header-logo-wrapper">{ICONS.DAO_LOGO}</span>;
 
@@ -11,6 +13,33 @@ export function DashboardPage() {
   const { isConnected } = useAppKitAccount();
   const { chainId } = useAppKitNetwork();
   const { successMessage, errorMessage } = useStatusMessageState();
+  const statusMessageDispatch = useStatusMessageDispatch();
+  const { addToast } = useToast();
+  const prevSuccessRef = useRef<string | null>(null);
+  const prevErrorRef = useRef<string | null>(null);
+
+  // Bridge status messages to toasts
+  useEffect(() => {
+    if (successMessage && successMessage !== prevSuccessRef.current) {
+      addToast("success", successMessage);
+      prevSuccessRef.current = successMessage;
+    }
+  }, [successMessage, addToast]);
+
+  useEffect(() => {
+    if (errorMessage && errorMessage !== prevErrorRef.current) {
+      addToast("error", errorMessage);
+      prevErrorRef.current = errorMessage;
+    }
+  }, [errorMessage, addToast]);
+
+  // Clear inline status messages after they've been toasted
+  useEffect(() => {
+    if (successMessage || errorMessage) {
+      const timer = setTimeout(() => statusMessageDispatch({ type: "clear" }), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage, errorMessage, statusMessageDispatch]);
 
   const isUnsupportedChain = isConnected && chainId && !supportedChains.some((c) => c.id === chainId);
 
@@ -29,23 +58,7 @@ export function DashboardPage() {
         <ConnectWalletButton />
       </section>
 
-      {/* Status Displays */}
-      {errorMessage && (
-        <section id="error-message-wrapper">
-          <div className="status-message">
-            {ICONS.WARNING}
-            <span>{errorMessage}</span>
-          </div>
-        </section>
-      )}
-      {successMessage && (
-        <section id="success-message-wrapper">
-          <div className="status-message">
-            {ICONS.SUCCESS}
-            <span>{successMessage}</span>
-          </div>
-        </section>
-      )}
+      {/* Status messages are now handled by the toast system */}
 
       {isUnsupportedChain ? (
         <div className="pool-container">
