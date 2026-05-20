@@ -5,9 +5,7 @@ const root = Deno.env.get("STATIC_DIR") ?? "dist";
 
 Deno.serve(async (req) => {
   const isHead = req.method === "HEAD";
-  const request = isHead
-    ? new Request(req.url, { method: "GET", headers: req.headers })
-    : req;
+  const request = isHead ? new Request(req.url, { method: "GET", headers: req.headers }) : req;
   const url = new URL(req.url);
   const path = url.pathname;
 

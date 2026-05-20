@@ -95,12 +95,32 @@ cast rpc evm_mine
 
 ## 🔧 Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `bun run dev` | Dev server (MODE=dev) using remote RPC |
-| `bun run local` | Dev server (MODE=local-node) enabling `anvil` chain id 31337 |
-| `bun run build` | Production build to `dist/` |
-| `bun run lint` | ESLint over the repo |
+| Script                     | Purpose                                                      |
+| -------------------------- | ------------------------------------------------------------ |
+| `bun run dev`              | Dev server (MODE=dev) using remote RPC                       |
+| `bun run local`            | Dev server (MODE=local-node) enabling `anvil` chain id 31337 |
+| `bun run build`            | Production build to `dist/`                                  |
+| `bun run lint`             | ESLint over the repo                                         |
+| `bun run e2e`              | Playwright Chromium smoke tests against preview mode         |
+| `E2E_MODE=dev bun run e2e` | Playwright Chromium smoke tests against the Vite dev server  |
+| `bun run e2e:ui`           | Open the Playwright UI runner                                |
+| `bun run preview`          | Serve the production build on port 4173                      |
+
+### End-to-End Smoke Tests
+
+The Playwright smoke suite starts its own server and does not require a wallet,
+RPC key, or chain fork. By default, it builds and serves the production preview
+on <http://127.0.0.1:4173>.
+
+```bash
+bun run e2e
+```
+
+To run the same smoke tests against the Vite dev server:
+
+```bash
+E2E_MODE=dev bun run e2e
+```
 
 ## 🌐 RPC Resolution
 

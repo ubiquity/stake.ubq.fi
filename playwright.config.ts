@@ -1,16 +1,19 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const isCI = !!process.env.CI;
+const e2eMode = process.env.E2E_MODE === "dev" ? "dev" : "preview";
 const defaultHost = process.env.PLAYWRIGHT_BASE_HOST ?? "127.0.0.1";
-const serverHost =
-  process.env.PLAYWRIGHT_HOST ?? (isCI ? "0.0.0.0" : defaultHost);
-const port = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
-const baseURL =
-  process.env.PLAYWRIGHT_BASE_URL ?? `http://${defaultHost}:${port}`;
+const serverHost = process.env.PLAYWRIGHT_HOST ?? (isCI ? "0.0.0.0" : defaultHost);
+const port = Number(process.env.PLAYWRIGHT_PORT ?? (e2eMode === "dev" ? 5173 : 4173));
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://${defaultHost}:${port}`;
+const webServerCommand =
+  e2eMode === "dev"
+    ? `bun run dev -- --host ${serverHost} --port ${port} --strictPort`
+    : `bun run build && bun x vite preview --host ${serverHost} --port ${port} --strictPort`;
 
 export default defineConfig({
-  testDir: "e2e",
-  testMatch: "**/*.e2e.ts",
+  testDir: "tests/e2e",
+  testMatch: "**/*.spec.ts",
   fullyParallel: false,
   retries: isCI ? 1 : 0,
   reporter: isCI ? [["github"], ["line"]] : "list",
@@ -25,7 +28,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `bun x --bun vite preview --host ${serverHost} --port ${port} --strictPort`,
+    command: webServerCommand,
     url: baseURL,
     reuseExistingServer: !isCI,
     timeout: 120000,
