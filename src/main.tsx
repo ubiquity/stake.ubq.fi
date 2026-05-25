@@ -5,7 +5,7 @@ import { WagmiProvider } from "wagmi";
 import App from "./App.tsx";
 import { grid } from "./the-grid";
 import { StatusMessageProvider } from "./context/status-message.tsx";
-import { wagmiConfig } from "./wallet/config";
+import { initializeRpcRuntime } from "./utils/rpc-runtime";
 
 const queryClient = new QueryClient();
 
@@ -20,17 +20,24 @@ if (!gridElement) {
   console.warn("Could not find grid element for background animation");
 }
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <StatusMessageProvider>
-          <App />
-        </StatusMessageProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
-  </StrictMode>
-);
+async function bootstrap() {
+  await initializeRpcRuntime();
+  const { wagmiConfig } = await import("./wallet/config");
+
+  createRoot(rootElement).render(
+    <StrictMode>
+      <WagmiProvider config={wagmiConfig}>
+        <QueryClientProvider client={queryClient}>
+          <StatusMessageProvider>
+            <App />
+          </StatusMessageProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </StrictMode>
+  );
+}
+
+void bootstrap();
 
 if (gridElement) {
   grid(gridElement, () => document.body.classList.add("grid-loaded"));
