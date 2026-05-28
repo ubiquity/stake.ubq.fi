@@ -1,8 +1,6 @@
-import { createAppKit } from "@reown/appkit/react";
-import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { mainnet, anvil, type Chain } from "viem/chains";
-import { isLocalNode, RPC_URL } from "../constants/config";
-import { http, injected, type Transport } from "wagmi";
+import { isLocalNode, primaryRpcUrl, RPC_TIMEOUT_MS } from "../constants/config";
+import { createConfig, http, fallback, type Transport } from "wagmi";
 
 export const supportedChains: readonly [Chain, ...Chain[]] = isLocalNode ? [mainnet, anvil] : [mainnet];
 
@@ -11,55 +9,34 @@ type TransportsMap = Record<ChainId, Transport>;
 
 // Anvil doesn't support URLs like http://localhost:8545/31337
 const transports = supportedChains.reduce<TransportsMap>((acc, chain) => {
-  // In local-node mode, use raw RPC_URL without chain ID suffix for ALL chains
+  // In local-node mode, use raw primaryRpcUrl without chain ID suffix for ALL chains
   // In production/dev mode, append chain ID
-  const rpcUrl = isLocalNode ? RPC_URL : `${RPC_URL}/${chain.id}`;
+  const rpcUrl = isLocalNode ? primaryRpcUrl : `${primaryRpcUrl}/${chain.id}`;
+  const fallbackUrl1 = `https://rpc.ubq.fi/${chain.id}`;
+  const fallbackUrl2 = `https://ethereum-rpc.publicnode.com`;
 
-  acc[chain.id] = http(rpcUrl, {
-    batch: isLocalNode ? false : true,
-  });
+  acc[chain.id] = isLocalNode
+    ? http(rpcUrl, {
+        timeout: RPC_TIMEOUT_MS,
+        batch: false,
+      })
+    : fallback(
+        [
+          http(rpcUrl, { timeout: RPC_TIMEOUT_MS, batch: true }),
+          http(fallbackUrl1, { timeout: RPC_TIMEOUT_MS, batch: true }),
+          http(fallbackUrl2, { timeout: RPC_TIMEOUT_MS }),
+        ],
+        { retryCount: 3 }
+      );
+
   return acc;
 }, {} as TransportsMap);
 
-const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID?.trim() || "";
-
-export const isWalletConnectConfigured = projectId.length > 0;
-
-if (!isWalletConnectConfigured && import.meta.env.DEV) {
-  console.warn(
-    "⚠️  VITE_WALLETCONNECT_PROJECT_ID not configured. WalletConnect features will be limited.\n" + "Get your project ID at: https://cloud.reown.com/"
-  );
-}
-
-const metadata = {
-  name: "Ubiquity Staking",
-  description: "Staking frontend for the Ubiquity protocol",
-  url: typeof window !== "undefined" ? window.location.origin : "https://stake.ubq.fi",
-  icons: [
-    typeof window !== "undefined" ? `${window.location.origin}/src/assets/ubiquity-dao-logo.svg` : "https://stake.ubq.fi/src/assets/ubiquity-dao-logo.svg",
-  ],
-};
-
-export const wagmiAdapter = new WagmiAdapter({
-  networks: [...supportedChains],
-  projectId,
+export const wagmiConfig = createConfig({
+  chains: supportedChains,
   transports,
   connectors: [injected()],
   batch: {
     multicall: false, // Disabled because rpc.ubq.fi already uses multicall
-  },
-});
-
-createAppKit({
-  adapters: [wagmiAdapter],
-  networks: [...supportedChains],
-  projectId,
-  metadata,
-  features: {
-    analytics: false,
-  },
-  themeVariables: {
-    "--w3m-accent": "#00BFFF",
-    "--w3m-border-radius-master": "4px",
   },
 });
