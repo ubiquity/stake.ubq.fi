@@ -95,22 +95,25 @@ cast rpc evm_mine
 
 ## 🔧 Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `bun run dev` | Dev server (MODE=dev) using remote RPC |
+| Script          | Purpose                                                      |
+| --------------- | ------------------------------------------------------------ |
+| `bun run dev`   | Dev server (MODE=dev) using remote RPC                       |
 | `bun run local` | Dev server (MODE=local-node) enabling `anvil` chain id 31337 |
-| `bun run build` | Production build to `dist/` |
-| `bun run lint` | ESLint over the repo |
+| `bun run build` | Production build to `dist/`                                  |
+| `bun run lint`  | ESLint over the repo                                         |
 
 ## 🌐 RPC Resolution
 
 Defined in `src/constants/config.ts`:
 
-1. If `VITE_RPC_URL` env var is set → use it directly.
-2. Else if development build or hostname includes `.deno.dev` (preview) → `https://rpc.ubq.fi`.
-3. Else in production build → relative `/rpc` (can be reverse‑proxied / cached).
+1. If `VITE_RPC_URL` env var is set and valid → use it directly.
+2. Invalid RPC URLs emit a console warning and fall back to the mode default.
+3. Else if development build or hostname includes `.deno.dev` (preview) → `https://rpc.ubq.fi`.
+4. Else in production build → relative `/rpc` (can be reverse‑proxied / cached).
 
-`local-node` mode adds the Anvil chain (31337) and uses the raw `RPC_URL` (no chain ID suffix) for all chains.
+Mainnet transports use viem's fallback transport so a custom or proxied primary RPC can fall back to `https://rpc.ubq.fi` when requests fail. `local-node` mode adds the Anvil chain (31337), skips fallback endpoints, and uses the raw `RPC_URL` (no chain ID suffix) for all chains.
+
+`src/utils/rpc-health.ts` exposes `rpcHealthCheck()` for diagnostics and tests. It probes `eth_chainId` with a short timeout and reports typed success, error, status, latency, and timeout details.
 
 ## 📦 Production Build & Deploy
 
