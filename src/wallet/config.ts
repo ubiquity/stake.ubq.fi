@@ -1,5 +1,5 @@
 import { mainnet, anvil, type Chain } from "viem/chains";
-import { isLocalNode, RPC_URL } from "../constants/config";
+import { isLocalNode, RPC_CONFIG } from "../constants/config";
 import { createConfig, http, injected, type Transport } from "wagmi";
 
 export const supportedChains: readonly [Chain, ...Chain[]] = isLocalNode ? [mainnet, anvil] : [mainnet];
@@ -9,9 +9,7 @@ type TransportsMap = Record<ChainId, Transport>;
 
 // Anvil doesn't support URLs like http://localhost:8545/31337
 const transports = supportedChains.reduce<TransportsMap>((acc, chain) => {
-  // In local-node mode, use raw RPC_URL without chain ID suffix for ALL chains
-  // In production/dev mode, append chain ID
-  const rpcUrl = isLocalNode ? RPC_URL : `${RPC_URL}/${chain.id}`;
+  const rpcUrl = RPC_CONFIG.shouldAppendChainId ? `${RPC_CONFIG.url.replace(/\/$/, "")}/${chain.id}` : RPC_CONFIG.url;
 
   acc[chain.id] = http(rpcUrl, {
     batch: isLocalNode ? false : true,
