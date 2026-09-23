@@ -5,6 +5,7 @@ import { WagmiProvider } from "wagmi";
 import App from "./App.tsx";
 import { grid } from "./the-grid";
 import { StatusMessageProvider } from "./context/status-message.tsx";
+import { StatusToastBridge, ToastContainer, ToastProvider } from "./ui/toast/index.ts";
 import { initializeRpcRuntime } from "./utils/rpc-runtime";
 
 const queryClient = new QueryClient();
@@ -31,9 +32,13 @@ async function bootstrap() {
     <StrictMode>
       <WagmiProvider config={wagmiConfig}>
         <QueryClientProvider client={queryClient}>
-          <StatusMessageProvider>
-            <App />
-          </StatusMessageProvider>
+          <ToastProvider>
+            <StatusMessageProvider>
+              <App />
+              <StatusToastBridge />
+              <ToastContainer />
+            </StatusMessageProvider>
+          </ToastProvider>
         </QueryClientProvider>
       </WagmiProvider>
     </StrictMode>
