@@ -57,6 +57,12 @@ export function StatusToastBridge() {
 
   useEffect(() => {
     if (!successMessage) {
+      // A cleared success channel must also retire a reverted-receipt toast.
+      // The error effect runs first, so preserve any failure it just emitted.
+      if (!errorMessage && failureToastId.current) {
+        dismissRef.current(failureToastId.current);
+        failureToastId.current = null;
+      }
       emitted.current.success = null;
       return;
     }
@@ -78,7 +84,7 @@ export function StatusToastBridge() {
     }
 
     toastRef.current(successMessage, "success");
-  }, [successMessage]);
+  }, [successMessage, errorMessage]);
 
   return null;
 }

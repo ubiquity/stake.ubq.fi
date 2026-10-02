@@ -57,6 +57,44 @@ describe("StatusToastBridge severity", () => {
 });
 
 describe("StatusToastBridge recovery", () => {
+  it("dismisses a reverted receipt on clear before the next pending action", async () => {
+    renderBridge();
+
+    await act(async () => {
+      dispatch?.({ type: "setSuccess", message: "Transaction reverted" });
+    });
+    expect(await screen.findByText("Transaction reverted")).not.toBeNull();
+
+    await act(async () => {
+      dispatch?.({ type: "clear" });
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Transaction reverted")).toBeNull();
+    });
+
+    await act(async () => {
+      dispatch?.({ type: "setSuccess", message: "Transaction pending" });
+    });
+    expect(await screen.findByText("Transaction pending")).not.toBeNull();
+    expect(screen.queryByText("Transaction reverted")).toBeNull();
+  });
+
+  it("dismisses a reverted receipt when success is explicitly reset to null", async () => {
+    renderBridge();
+
+    await act(async () => {
+      dispatch?.({ type: "setSuccess", message: "Transaction reverted" });
+    });
+    expect(await screen.findByText("Transaction reverted")).not.toBeNull();
+
+    await act(async () => {
+      dispatch?.({ type: "setSuccess", message: null });
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Transaction reverted")).toBeNull();
+    });
+  });
+
   it("dismisses the persistent error toast once a success arrives", async () => {
     renderBridge();
 
