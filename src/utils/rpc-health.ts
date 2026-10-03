@@ -70,8 +70,8 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
   });
 
   try {
-    const response = await Promise.race([
-      fetcher(rpcUrl, {
+    const probe = async (): Promise<RpcHealthCheckResult> => {
+      const response = await fetcher(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -81,36 +81,37 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
           params: [],
         }),
         signal: controller.signal,
-      }),
-      deadline,
-    ]);
+      });
 
-    if (!response.ok) {
-      return { status: "unreachable", rpcUrl, latencyMs: elapsed(), error: `HTTP ${response.status}` };
-    }
+      if (!response.ok) {
+        return { status: "unreachable", rpcUrl, latencyMs: elapsed(), error: `HTTP ${response.status}` };
+      }
 
-    const payload = (await response.json()) as RpcResponsePayload;
-    if (payload.error) {
-      return { status: "rpc-error", rpcUrl, latencyMs: elapsed(), error: payload.error.message ?? "RPC responded with an error" };
-    }
+      const payload = (await response.json()) as RpcResponsePayload;
+      if (payload.error) {
+        return { status: "rpc-error", rpcUrl, latencyMs: elapsed(), error: payload.error.message ?? "RPC responded with an error" };
+      }
 
-    const parsed = parseChainId(payload.result);
-    if (!parsed) {
-      return { status: "rpc-error", rpcUrl, latencyMs: elapsed(), error: "Invalid eth_chainId response" };
-    }
+      const parsed = parseChainId(payload.result);
+      if (!parsed) {
+        return { status: "rpc-error", rpcUrl, latencyMs: elapsed(), error: "Invalid eth_chainId response" };
+      }
 
-    if (expectedChainId !== undefined && parsed.chainId !== expectedChainId) {
-      return {
-        status: "mismatched-chain",
-        rpcUrl,
-        chainId: parsed.chainId,
-        chainIdHex: parsed.chainIdHex,
-        latencyMs: elapsed(),
-        error: `Expected chain ${expectedChainId}, got ${parsed.chainId}`,
-      };
-    }
+      if (expectedChainId !== undefined && parsed.chainId !== expectedChainId) {
+        return {
+          status: "mismatched-chain",
+          rpcUrl,
+          chainId: parsed.chainId,
+          chainIdHex: parsed.chainIdHex,
+          latencyMs: elapsed(),
+          error: `Expected chain ${expectedChainId}, got ${parsed.chainId}`,
+        };
+      }
 
-    return { status: "healthy", rpcUrl, chainId: parsed.chainId, chainIdHex: parsed.chainIdHex, latencyMs: elapsed() };
+      return { status: "healthy", rpcUrl, chainId: parsed.chainId, chainIdHex: parsed.chainIdHex, latencyMs: elapsed() };
+    };
+
+    return await Promise.race([probe(), deadline]);
   } catch (error) {
     const status: RpcHealthStatus = timedOut ? "timeout" : signal?.aborted ? "aborted" : "unreachable";
     return {

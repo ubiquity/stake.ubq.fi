@@ -57,6 +57,41 @@ describe("initializeRpcRuntime", () => {
     expect(state.recentErrorCount).toBe(1);
   });
 
+  it("falls back to the next candidate when the primary response body never finishes", async () => {
+    const probed: string[] = [];
+    const hangingBodyResponse = (): Response =>
+      new Response(new ReadableStream({ start() {} }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+    const fetcher = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      probed.push(url);
+      if (url.startsWith("https://hanging-body.example")) {
+        return hangingBodyResponse();
+      }
+      if (url.startsWith("https://fallback.example")) {
+        return jsonResponse({ jsonrpc: "2.0", id: 1, result: "0x1" });
+      }
+      return jsonResponse({ jsonrpc: "2.0", id: 1, error: { message: "unexpected" } }, 500);
+    }) as typeof fetch;
+
+    await initializeRpcRuntime({
+      candidates: ["https://hanging-body.example", "https://fallback.example"],
+      expectedChainId: 1,
+      localNode: false,
+      fetcher,
+    });
+
+    const state = getRpcRuntimeState();
+    expect(probed).toEqual(["https://hanging-body.example/1", "https://fallback.example/1"]);
+    expect(state.resolvedRpcUrl).toBe("https://fallback.example");
+    expect(getResolvedRpcBaseUrl()).toBe("https://fallback.example");
+    expect(state.lastStatus).toBe("healthy");
+    expect(state.recentErrorCount).toBe(1);
+  });
+
   it("keeps the primary and counts every failure when no candidate is healthy", async () => {
     await initializeRpcRuntime({
       candidates: ["https://primary.example", "https://fallback.example"],

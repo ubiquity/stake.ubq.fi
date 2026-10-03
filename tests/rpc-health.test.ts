@@ -8,6 +8,14 @@ const fetcherReturning = (body: unknown, status = 200): typeof fetch => (async (
 
 const ignoringAbortFetcher = (() => new Promise<Response>(() => undefined)) as typeof fetch;
 
+const hangingBodyFetcher = (() =>
+  Promise.resolve(
+    new Response(new ReadableStream({ start() {} }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })
+  )) as typeof fetch;
+
 const hangingFetcher = ((_input: RequestInfo | URL, init?: RequestInit) =>
   new Promise<Response>((_resolve, reject) => {
     init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
@@ -76,6 +84,15 @@ describe("rpcHealthCheck", () => {
   it("settles on its deadline when the fetcher ignores the abort signal", async () => {
     const startedAt = Date.now();
     const result = await rpcHealthCheck("https://rpc.example", { timeoutMs: 30, fetcher: ignoringAbortFetcher });
+
+    expect(result.status).toBe("timeout");
+    expect(result.error).toContain("Timed out");
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+  });
+
+  it("times out when the response body stream never finishes", async () => {
+    const startedAt = Date.now();
+    const result = await rpcHealthCheck("https://rpc.example", { timeoutMs: 30, fetcher: hangingBodyFetcher });
 
     expect(result.status).toBe("timeout");
     expect(result.error).toContain("Timed out");
