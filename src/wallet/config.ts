@@ -1,5 +1,5 @@
 import { mainnet, anvil, type Chain } from "viem/chains";
-import { fallback } from "viem";
+import { custom, fallback } from "viem";
 import { createConfig, http, injected, type Transport } from "wagmi";
 import { getChainRpcUrl, isLocalNode, RPC_FALLBACK_URLS, RPC_URL } from "../constants/config";
 import { getResolvedRpcBaseUrl } from "../utils/rpc-runtime";
@@ -49,15 +49,16 @@ function createRpcTransport(rpcUrl: string): Transport {
  * health probe, and wagmi memoizes the client it builds from these transports. Resolving
  * here is what lets the probe selection actually replace the endpoint that is called.
  */
-function dynamicRpcTransport(createTransport: () => Transport[]): Transport {
+export function dynamicRpcTransport(createTransport: () => Transport[]): Transport {
   const transport: Transport = (params) => {
-    const [primary, ...rest] = createTransport();
-    if (!primary) throw new Error("No RPC transport URL is available");
-    if (rest.length === 0) return primary(params);
-    return fallback(
-      [primary, ...rest].map((next) => next(params)),
-      { rank: false }
-    )(params);
+    return custom({
+      async request(args, options) {
+        const [primary, ...rest] = createTransport();
+        if (!primary) throw new Error("No RPC transport URL is available");
+        if (rest.length === 0) return primary(params).request(args, options);
+        return fallback([primary, ...rest], { rank: false })(params).request(args, options);
+      },
+    })(params);
   };
 
   return transport;

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import { createClient, type Transport } from "viem";
 import { anvil, mainnet } from "viem/chains";
 
 import { MAINNET_RPC_FALLBACK_URL, RPC_FALLBACK_URLS, RPC_URL } from "../src/constants/config";
-import { getChainRpcUrl, getRpcTransportUrls } from "../src/wallet/config";
+import { dynamicRpcTransport, getChainRpcUrl, getRpcTransportUrls } from "../src/wallet/config";
 
 describe("getChainRpcUrl", () => {
   it("appends the chain id to mainnet RPC endpoints", () => {
@@ -58,5 +59,80 @@ describe("getRpcTransportUrls", () => {
     for (const fallbackUrl of RPC_FALLBACK_URLS) {
       expect(urls).toContain(`${fallbackUrl}/1`);
     }
+  });
+});
+
+describe("dynamicRpcTransport", () => {
+  it("throws when no transport is provided", async () => {
+    const transport = dynamicRpcTransport(() => []);
+    const client = transport({ chain: mainnet });
+    expect(client.request({ method: "eth_blockNumber" })).rejects.toThrow("No RPC transport URL is available");
+  });
+
+  it("switches the selected endpoint after client creation and observes the next request on the new endpoint", async () => {
+    let currentEndpoint = "https://primary.example";
+    const requestedEndpoints: string[] = [];
+
+    const createMockTransport =
+      (url: string): Transport =>
+      () => ({
+        config: { key: url, name: url, request: async () => {}, retryCount: 0, retryDelay: 0, timeout: 2000, type: "http" },
+        request: async ({ method }: { method: string }) => {
+          requestedEndpoints.push(url);
+          if (method === "eth_chainId") return "0x1";
+          return `result-from-${url}`;
+        },
+        value: undefined,
+      });
+
+    const client = createClient({
+      chain: mainnet,
+      transport: dynamicRpcTransport(() => [createMockTransport(currentEndpoint)]),
+    });
+
+    // Initial request reaches the primary endpoint
+    const firstResult = await client.request({ method: "eth_blockNumber" });
+    expect(firstResult).toBe("result-from-https://primary.example");
+    expect(requestedEndpoints).toEqual(["https://primary.example"]);
+
+    // Endpoint changes after client creation (e.g., health probe completes and selects fallback)
+    currentEndpoint = "https://fallback.example";
+
+    // Next request on the existing client immediately uses the newly selected endpoint
+    const secondResult = await client.request({ method: "eth_blockNumber" });
+    expect(secondResult).toBe("result-from-https://fallback.example");
+    expect(requestedEndpoints).toEqual(["https://primary.example", "https://fallback.example"]);
+  });
+
+  it("exercises a two-endpoint fallback chain when the primary fails", async () => {
+    let primaryCalled = false;
+    let fallbackCalled = false;
+
+    const primaryTransport: Transport = () => ({
+      config: { key: "primary", name: "Primary", request: async () => {}, retryCount: 0, retryDelay: 0, timeout: 2000, type: "http" },
+      request: async () => {
+        primaryCalled = true;
+        throw new Error("Primary RPC connection refused");
+      },
+      value: undefined,
+    });
+
+    const fallbackTransport: Transport = () => ({
+      config: { key: "fallback", name: "Fallback", request: async () => {}, retryCount: 0, retryDelay: 0, timeout: 2000, type: "http" },
+      request: async ({ method }: { method: string }) => {
+        fallbackCalled = true;
+        if (method === "eth_chainId") return "0x1";
+        return "0x123";
+      },
+      value: undefined,
+    });
+
+    const transport = dynamicRpcTransport(() => [primaryTransport, fallbackTransport]);
+    const client = transport({ chain: mainnet });
+
+    const result = await client.request({ method: "eth_blockNumber" });
+    expect(primaryCalled).toBe(true);
+    expect(fallbackCalled).toBe(true);
+    expect(result).toBe("0x123");
   });
 });
