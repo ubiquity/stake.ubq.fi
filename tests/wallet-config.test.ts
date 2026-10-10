@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { anvil, mainnet } from "viem/chains";
 
 import { MAINNET_RPC_FALLBACK_URL, RPC_FALLBACK_URLS, RPC_URL } from "../src/constants/config";
-import { getChainRpcUrl, getRpcTransportUrls } from "../src/wallet/config";
+import { dynamicRpcTransport, getChainRpcUrl, getRpcTransportUrls } from "../src/wallet/config";
+import type { Transport } from "viem";
 
 describe("getChainRpcUrl", () => {
   it("appends the chain id to mainnet RPC endpoints", () => {
@@ -58,5 +59,44 @@ describe("getRpcTransportUrls", () => {
     for (const fallbackUrl of RPC_FALLBACK_URLS) {
       expect(urls).toContain(`${fallbackUrl}/1`);
     }
+  });
+});
+
+describe("dynamicRpcTransport", () => {
+  it("throws when no transport is provided", () => {
+    const transport = dynamicRpcTransport(() => []);
+    expect(() => transport({ chain: mainnet })).toThrow("No RPC transport URL is available");
+  });
+
+  it("exercises a two-endpoint fallback chain when the primary fails", async () => {
+    let primaryCalled = false;
+    let fallbackCalled = false;
+
+    const primaryTransport: Transport = () => ({
+      config: { key: "primary", name: "Primary", request: async () => {}, retryCount: 0, retryDelay: 0, timeout: 2000, type: "http" },
+      request: async () => {
+        primaryCalled = true;
+        throw new Error("Primary RPC connection refused");
+      },
+      value: undefined,
+    });
+
+    const fallbackTransport: Transport = () => ({
+      config: { key: "fallback", name: "Fallback", request: async () => {}, retryCount: 0, retryDelay: 0, timeout: 2000, type: "http" },
+      request: async ({ method }: { method: string }) => {
+        fallbackCalled = true;
+        if (method === "eth_chainId") return "0x1";
+        return "0x123";
+      },
+      value: undefined,
+    });
+
+    const transport = dynamicRpcTransport(() => [primaryTransport, fallbackTransport]);
+    const client = transport({ chain: mainnet });
+
+    const result = await client.request({ method: "eth_blockNumber" });
+    expect(primaryCalled).toBe(true);
+    expect(fallbackCalled).toBe(true);
+    expect(result).toBe("0x123");
   });
 });
