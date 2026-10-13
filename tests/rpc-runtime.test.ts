@@ -3,8 +3,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { LOCAL_NODE_RPC_URL, RPC_URL } from "../src/constants/config";
 import { __resetRpcRuntimeForTests, getResolvedRpcBaseUrl, getRpcRuntimeState, initializeRpcRuntime } from "../src/utils/rpc-runtime";
 
-const jsonResponse = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+const jsonResponse = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const healthyFetcher = (async () => jsonResponse({ jsonrpc: "2.0", id: 1, result: "0x1" })) as typeof fetch;
 

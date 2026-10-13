@@ -59,18 +59,31 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
   const onCallerAbort = () => controller.abort();
   signal?.addEventListener("abort", onCallerAbort);
 
+  // A fetcher may ignore the abort signal, so the probe settles on its own deadline
+  // instead of leaving the caller pending forever. The abandoned fetch is not awaited.
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    deadlineTimer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`Timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
   try {
-    const response = await fetcher(rpcUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_chainId",
-        params: [],
+    const response = await Promise.race([
+      fetcher(rpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_chainId",
+          params: [],
+        }),
+        signal: controller.signal,
       }),
-      signal: controller.signal,
-    });
+      deadline,
+    ]);
 
     if (!response.ok) {
       return { status: "unreachable", rpcUrl, latencyMs: elapsed(), error: `HTTP ${response.status}` };
@@ -108,6 +121,7 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
     };
   } finally {
     clearTimeout(timer);
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
     signal?.removeEventListener("abort", onCallerAbort);
   }
 }

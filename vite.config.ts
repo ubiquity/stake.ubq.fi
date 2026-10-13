@@ -13,6 +13,22 @@ export default defineConfig({
   build: {
     cssCodeSplit: false,
     outDir: "dist",
+    rollupOptions: {
+      output: {
+        // Keep the heavy vendor libraries in stable, cacheable chunks instead of one entry bundle.
+        manualChunks(id) {
+          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/")) {
+            return "vendor-react";
+          }
+          if (id.includes("node_modules/@tanstack/react-query/")) {
+            return "vendor-query";
+          }
+          if (id.includes("node_modules/wagmi/") || id.includes("node_modules/viem/")) {
+            return "vendor-wallet";
+          }
+        },
+      },
+    },
   },
   worker: {
     format: "es",

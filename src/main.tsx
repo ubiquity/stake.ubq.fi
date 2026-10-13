@@ -5,7 +5,9 @@ import { WagmiProvider } from "wagmi";
 import App from "./App.tsx";
 import { grid } from "./the-grid";
 import { StatusMessageProvider } from "./context/status-message.tsx";
+import { StatusToastBridge, ToastContainer, ToastProvider } from "./ui/toast/index.ts";
 import { initializeRpcRuntime } from "./utils/rpc-runtime";
+import { wagmiConfig } from "./wallet/config.ts";
 
 const queryClient = new QueryClient();
 
@@ -22,39 +24,29 @@ if (!gridElement) {
 
 const root = createRoot(rootElement);
 
-async function bootstrap() {
-  await initializeRpcRuntime();
-  // The wallet config reads the resolved RPC selection, so it must load after initialization.
-  const { wagmiConfig } = await import("./wallet/config.ts");
-
-  root.render(
-    <StrictMode>
-      <WagmiProvider config={wagmiConfig}>
-        <QueryClientProvider client={queryClient}>
+// The transports resolve the RPC endpoint at request time, so the shell renders now
+// and the health probe only re-points it once it settles instead of gating first paint.
+root.render(
+  <StrictMode>
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
           <StatusMessageProvider>
             <App />
+            <StatusToastBridge />
+            <ToastContainer />
           </StatusMessageProvider>
-        </QueryClientProvider>
-      </WagmiProvider>
-    </StrictMode>
-  );
-}
+        </ToastProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  </StrictMode>
+);
 
-function renderBootstrapError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+// A failed probe must not blank the app: reads keep using the primary while the
+// transport fallback covers the outage, and the diagnostics panel reports the selection.
+void initializeRpcRuntime().catch((error: unknown) => {
   console.error("[bootstrap] Unable to initialize the RPC runtime", error);
-
-  root.render(
-    <StrictMode>
-      <section id="bootstrap-error" style={{ padding: "20px" }}>
-        <h1>Unable to start Ubiquity Staking</h1>
-        <p>RPC initialization failed: {message}</p>
-      </section>
-    </StrictMode>
-  );
-}
-
-void bootstrap().catch(renderBootstrapError);
+});
 
 if (gridElement) {
   grid(gridElement, () => document.body.classList.add("grid-loaded"));

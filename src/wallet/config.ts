@@ -35,22 +35,39 @@ export function getRpcTransportUrls(
   return [...new Set(rpcUrls.map((currentRpcUrl) => getChainRpcUrl(currentRpcUrl, chain.id, localNode)))];
 }
 
-function createRpcTransport(chain: Chain): Transport {
-  const selectedRpcUrl = getResolvedRpcBaseUrl() || RPC_URL;
-  const rpcTransports = getRpcTransportUrls(chain, { rpcUrl: selectedRpcUrl }).map((rpcUrl) =>
-    http(rpcUrl, {
-      batch: !isLocalNode,
-      timeout: RPC_TRANSPORT_TIMEOUT_MS,
-    })
-  );
-
-  if (rpcTransports.length === 1) return rpcTransports[0];
-  return fallback(rpcTransports, { rank: false });
+function createRpcTransport(rpcUrl: string): Transport {
+  return http(rpcUrl, {
+    batch: !isLocalNode,
+    timeout: RPC_TRANSPORT_TIMEOUT_MS,
+  });
 }
 
-// Anvil doesn't support URLs like http://localhost:8545/31337
+/**
+ * Wraps a transport factory so the URL chain is rebuilt on every request instead of when
+ * this module is evaluated. `src/wallet/config.ts` is statically imported through
+ * App -> dashboard-page -> connect-wallet, so it loads before `main.tsx` starts the RPC
+ * health probe, and wagmi memoizes the client it builds from these transports. Resolving
+ * here is what lets the probe selection actually replace the endpoint that is called.
+ */
+function dynamicRpcTransport(createTransport: () => Transport[]): Transport {
+  const transport: Transport = (params) => {
+    const [primary, ...rest] = createTransport();
+    if (!primary) throw new Error("No RPC transport URL is available");
+    if (rest.length === 0) return primary(params);
+    return fallback(
+      [primary, ...rest].map((next) => next(params)),
+      { rank: false }
+    )(params);
+  };
+
+  return transport;
+}
+
+// Anvil cannot serve URLs like http://localhost:8545/31337
 const transports = supportedChains.reduce<TransportsMap>((acc, chain) => {
-  acc[chain.id] = createRpcTransport(chain);
+  acc[chain.id] = dynamicRpcTransport(() =>
+    getRpcTransportUrls(chain, { rpcUrl: getResolvedRpcBaseUrl() || RPC_URL }).map((rpcUrl) => createRpcTransport(rpcUrl))
+  );
   return acc;
 }, {} as TransportsMap);
 

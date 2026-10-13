@@ -2,10 +2,11 @@ import { describe, expect, it } from "bun:test";
 
 import { DEFAULT_RPC_HEALTH_TIMEOUT_MS, rpcHealthCheck } from "../src/utils/rpc-health";
 
-const jsonResponse = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+const jsonResponse = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const fetcherReturning = (body: unknown, status = 200): typeof fetch => (async () => jsonResponse(body, status)) as typeof fetch;
+
+const ignoringAbortFetcher = (() => new Promise<Response>(() => undefined)) as typeof fetch;
 
 const hangingFetcher = ((_input: RequestInfo | URL, init?: RequestInit) =>
   new Promise<Response>((_resolve, reject) => {
@@ -70,6 +71,15 @@ describe("rpcHealthCheck", () => {
 
     expect(result.status).toBe("timeout");
     expect(result.error).toContain("Timed out");
+  });
+
+  it("settles on its deadline when the fetcher ignores the abort signal", async () => {
+    const startedAt = Date.now();
+    const result = await rpcHealthCheck("https://rpc.example", { timeoutMs: 30, fetcher: ignoringAbortFetcher });
+
+    expect(result.status).toBe("timeout");
+    expect(result.error).toContain("Timed out");
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
   });
 
   it("honors an already-aborted caller signal without fetching", async () => {
