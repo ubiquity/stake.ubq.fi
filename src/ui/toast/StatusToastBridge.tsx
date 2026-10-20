@@ -27,6 +27,7 @@ export function StatusToastBridge() {
   // The status context carries one message at a time, so only the newest failure toast
   // stays on screen; it is dismissed by id so unrelated toasts are never touched.
   const failureToastId = useRef<string | null>(null);
+  const failureToastSource = useRef<"error" | "success" | null>(null);
   // The toast context is memoized but changes identity whenever a message is added, and an
   // effect that re-runs on that change would dismiss the toast it just added. Keep the emitters
   // in refs so the effects below react to status changes only.
@@ -37,9 +38,10 @@ export function StatusToastBridge() {
 
   useEffect(() => {
     // The previous failure is superseded by whatever the channel reports next.
-    if (failureToastId.current) {
+    if (failureToastId.current && (!errorMessage ? failureToastSource.current === "error" : true)) {
       dismissRef.current(failureToastId.current);
       failureToastId.current = null;
+      failureToastSource.current = null;
     }
 
     if (!errorMessage) {
@@ -53,10 +55,16 @@ export function StatusToastBridge() {
     emitted.current.error = errorMessage;
     // Errors stay until dismissed or superseded, matching the donor wiring for transaction failures.
     failureToastId.current = toastRef.current(errorMessage, "error", 0);
+    failureToastSource.current = "error";
   }, [errorMessage]);
 
   useEffect(() => {
     if (!successMessage) {
+      if (failureToastId.current && failureToastSource.current === "success") {
+        dismissRef.current(failureToastId.current);
+        failureToastId.current = null;
+        failureToastSource.current = null;
+      }
       emitted.current.success = null;
       return;
     }
@@ -69,11 +77,13 @@ export function StatusToastBridge() {
     if (failureToastId.current) {
       dismissRef.current(failureToastId.current);
       failureToastId.current = null;
+      failureToastSource.current = null;
     }
 
     if (isFailureOutcomeMessage(successMessage)) {
       // On-chain reverts are reported on the success channel but are still failures.
       failureToastId.current = toastRef.current(successMessage, "error", 0);
+      failureToastSource.current = "success";
       return;
     }
 

@@ -92,6 +92,23 @@ describe("StatusToastBridge recovery", () => {
     });
   });
 
+  it("dismisses a revert failure toast from the success channel when the status channel clears", async () => {
+    renderBridge();
+
+    await act(async () => {
+      dispatch?.({ type: "setSuccess", message: "Transaction reverted" });
+    });
+    expect(await screen.findByText("Transaction reverted")).not.toBeNull();
+
+    await act(async () => {
+      dispatch?.({ type: "clear" });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Transaction reverted")).toBeNull();
+    });
+  });
+
   it("supersedes an older failure toast with the newest one", async () => {
     renderBridge();
 
