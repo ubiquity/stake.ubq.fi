@@ -3,8 +3,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { LOCAL_NODE_RPC_URL, RPC_URL } from "../src/constants/config";
 import { __resetRpcRuntimeForTests, getResolvedRpcBaseUrl, getRpcRuntimeState, initializeRpcRuntime } from "../src/utils/rpc-runtime";
 
-const jsonResponse = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+const jsonResponse = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const healthyFetcher = (async () => jsonResponse({ jsonrpc: "2.0", id: 1, result: "0x1" })) as typeof fetch;
 
@@ -147,5 +146,38 @@ describe("initializeRpcRuntime", () => {
     const state = getRpcRuntimeState();
     expect(state.resolvedRpcUrl).toBe("https://fast.example");
     expect(state.lastStatus).toBe("healthy");
+  });
+
+  it("times out a headers-only never-ending body on primary and tries the next candidate", async () => {
+    const probed: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      probed.push(url);
+      if (url.startsWith("https://stalled-body.example")) {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              void controller;
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      return jsonResponse({ jsonrpc: "2.0", id: 1, result: "0x1" });
+    }) as typeof fetch;
+
+    await initializeRpcRuntime({
+      candidates: ["https://stalled-body.example", "https://healthy.example"],
+      expectedChainId: 1,
+      localNode: false,
+      fetcher,
+    });
+
+    const state = getRpcRuntimeState();
+    expect(probed).toEqual(["https://stalled-body.example/1", "https://healthy.example/1"]);
+    expect(state.resolvedRpcUrl).toBe("https://healthy.example");
+    expect(state.lastStatus).toBe("healthy");
+    expect(state.recentErrorCount).toBe(1);
+    expect(state.initialized).toBe(true);
   });
 });

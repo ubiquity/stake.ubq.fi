@@ -2,8 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { DEFAULT_RPC_HEALTH_TIMEOUT_MS, rpcHealthCheck } from "../src/utils/rpc-health";
 
-const jsonResponse = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+const jsonResponse = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const fetcherReturning = (body: unknown, status = 200): typeof fetch => (async () => jsonResponse(body, status)) as typeof fetch;
 
@@ -11,6 +10,19 @@ const hangingFetcher = ((_input: RequestInfo | URL, init?: RequestInit) =>
   new Promise<Response>((_resolve, reject) => {
     init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
   })) as typeof fetch;
+
+const headersOnlyNeverEndingBodyFetcher = (() =>
+  Promise.resolve(
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          // Never enqueue or close; the body stream stays open forever.
+          void controller;
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    )
+  )) as typeof fetch;
 
 describe("rpcHealthCheck", () => {
   it("returns a healthy result with the parsed chain id and latency", async () => {
@@ -67,6 +79,13 @@ describe("rpcHealthCheck", () => {
 
   it("times out hanging probes", async () => {
     const result = await rpcHealthCheck("https://rpc.example", { timeoutMs: 5, fetcher: hangingFetcher });
+
+    expect(result.status).toBe("timeout");
+    expect(result.error).toContain("Timed out");
+  });
+
+  it("times out when the response body never finishes", async () => {
+    const result = await rpcHealthCheck("https://rpc.example", { timeoutMs: 5, fetcher: headersOnlyNeverEndingBodyFetcher });
 
     expect(result.status).toBe("timeout");
     expect(result.error).toContain("Timed out");

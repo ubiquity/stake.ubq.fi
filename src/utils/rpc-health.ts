@@ -52,31 +52,48 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
 
   const controller = new AbortController();
   let timedOut = false;
+  let responseToCancel: Response | null = null;
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
+    // Cancel the body stream so any in-flight `response.json()` settles instead of hanging.
+    responseToCancel?.body?.cancel().catch(() => {});
   }, timeoutMs);
   const onCallerAbort = () => controller.abort();
   signal?.addEventListener("abort", onCallerAbort);
 
   try {
-    const response = await fetcher(rpcUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_chainId",
-        params: [],
+    // Race the *complete* fetch-and-decode operation against the deadline so a
+    // headers-only response with a never-ending body cannot hang the probe.
+    const payload = (await Promise.race([
+      (async () => {
+        const response = await fetcher(rpcUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "eth_chainId",
+            params: [],
+          }),
+          signal: controller.signal,
+        });
+        responseToCancel = response;
+        if (!response.ok) {
+          throw new HttpError(response.status);
+        }
+        return (await response.json()) as RpcResponsePayload;
+      })(),
+      new Promise<never>((_resolve, reject) => {
+        const onAbort = () => reject(new Error("aborted"));
+        if (controller.signal.aborted) {
+          onAbort();
+          return;
+        }
+        controller.signal.addEventListener("abort", onAbort, { once: true });
       }),
-      signal: controller.signal,
-    });
+    ])) as RpcResponsePayload;
 
-    if (!response.ok) {
-      return { status: "unreachable", rpcUrl, latencyMs: elapsed(), error: `HTTP ${response.status}` };
-    }
-
-    const payload = (await response.json()) as RpcResponsePayload;
     if (payload.error) {
       return { status: "rpc-error", rpcUrl, latencyMs: elapsed(), error: payload.error.message ?? "RPC responded with an error" };
     }
@@ -99,6 +116,9 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
 
     return { status: "healthy", rpcUrl, chainId: parsed.chainId, chainIdHex: parsed.chainIdHex, latencyMs: elapsed() };
   } catch (error) {
+    if (error instanceof HttpError) {
+      return { status: "unreachable", rpcUrl, latencyMs: elapsed(), error: `HTTP ${error.status}` };
+    }
     const status: RpcHealthStatus = timedOut ? "timeout" : signal?.aborted ? "aborted" : "unreachable";
     return {
       status,
@@ -109,5 +129,12 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onCallerAbort);
+  }
+}
+
+class HttpError extends Error {
+  constructor(public readonly status: number) {
+    super(`HTTP ${status}`);
+    this.name = "HttpError";
   }
 }
