@@ -64,7 +64,15 @@ export const useStaking = ({ poolId, userAddress, lpToken, isConnected, onTransa
 
     try {
       const receipt = await waitForTransactionReceipt(publicClient, { hash });
-      statusMessageDispatch({ type: "setSuccess", message: receipt.status === "success" ? successMessage || "Transaction confirmed" : "Transaction reverted" });
+      if (receipt.status === "success") {
+        statusMessageDispatch({ type: "setSuccess", message: successMessage || "Transaction confirmed" });
+      } else {
+        // A reverted receipt is an error condition, not a success.
+        // Dispatching setError ensures the toast is dismissed when the
+        // status is cleared (e.g. on wallet change or next action),
+        // rather than persisting as a stale success message.
+        statusMessageDispatch({ type: "setError", message: "Transaction reverted" });
+      }
     } catch (error) {
       statusMessageDispatch({ type: "setError", message: error instanceof Error ? error.message : "Transaction failed" });
     }
