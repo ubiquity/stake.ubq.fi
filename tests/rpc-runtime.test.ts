@@ -148,4 +148,30 @@ describe("initializeRpcRuntime", () => {
     expect(state.resolvedRpcUrl).toBe("https://fast.example");
     expect(state.lastStatus).toBe("healthy");
   });
+
+  it("moves on to the next candidate when a probe's body never finishes", async () => {
+    const probed: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      probed.push(url);
+      if (url.startsWith("https://stalled.example")) {
+        // Headers arrive, the body never completes, and the abort signal is ignored.
+        return new Response(new ReadableStream<Uint8Array>({ start() {} }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return jsonResponse({ jsonrpc: "2.0", id: 1, result: "0x1" });
+    }) as typeof fetch;
+
+    await initializeRpcRuntime({
+      candidates: ["https://stalled.example", "https://fallback.example"],
+      expectedChainId: 1,
+      localNode: false,
+      fetcher,
+    });
+
+    const state = getRpcRuntimeState();
+    expect(probed).toEqual(["https://stalled.example/1", "https://fallback.example/1"]);
+    expect(state.resolvedRpcUrl).toBe("https://fallback.example");
+    expect(state.lastStatus).toBe("healthy");
+    expect(state.recentErrorCount).toBe(1);
+  });
 });

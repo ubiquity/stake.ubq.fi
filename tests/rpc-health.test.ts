@@ -12,6 +12,13 @@ const hangingFetcher = ((_input: RequestInfo | URL, init?: RequestInit) =>
     init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
   })) as typeof fetch;
 
+// Sends headers immediately but never finishes the body, and ignores the abort signal.
+const stalledBodyFetcher = (async () =>
+  new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  })) as typeof fetch;
+
 describe("rpcHealthCheck", () => {
   it("returns a healthy result with the parsed chain id and latency", async () => {
     const result = await rpcHealthCheck("https://rpc.example", {
@@ -70,6 +77,24 @@ describe("rpcHealthCheck", () => {
 
     expect(result.status).toBe("timeout");
     expect(result.error).toContain("Timed out");
+  });
+
+  it("times out when headers arrive but the body never finishes", async () => {
+    const result = await rpcHealthCheck("https://rpc.example", { timeoutMs: 5, fetcher: stalledBodyFetcher });
+
+    expect(result.status).toBe("timeout");
+    expect(result.error).toContain("Timed out");
+  });
+
+  it("aborts while the body is still being decoded when the caller signal aborts", async () => {
+    const controller = new AbortController();
+    const pending = rpcHealthCheck("https://rpc.example", { fetcher: stalledBodyFetcher, signal: controller.signal, timeoutMs: 5_000 });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.abort();
+    const result = await pending;
+
+    expect(result.status).toBe("aborted");
   });
 
   it("honors an already-aborted caller signal without fetching", async () => {
