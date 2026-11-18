@@ -52,14 +52,47 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
 
   const controller = new AbortController();
   let timedOut = false;
+
+  // The deadline settles the whole probe (request *and* body decoding), so a fetcher that
+  // ignores the abort signal or a body that never finishes can't hang the caller.
+  let settleDeadline: (result: RpcHealthCheckResult) => void = () => undefined;
+  const deadline = new Promise<RpcHealthCheckResult>((resolve) => {
+    settleDeadline = resolve;
+  });
+
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
+    settleDeadline({ status: "timeout", rpcUrl, latencyMs: elapsed(), error: `Timed out after ${timeoutMs}ms` });
   }, timeoutMs);
-  const onCallerAbort = () => controller.abort();
+  const onCallerAbort = () => {
+    controller.abort();
+    settleDeadline({ status: "aborted", rpcUrl, latencyMs: elapsed(), error: "Health check was aborted" });
+  };
   signal?.addEventListener("abort", onCallerAbort);
 
   try {
+    return await Promise.race([probe(), deadline]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onCallerAbort);
+  }
+
+  async function probe(): Promise<RpcHealthCheckResult> {
+    try {
+      return await requestAndDecode();
+    } catch (error) {
+      const status: RpcHealthStatus = timedOut ? "timeout" : signal?.aborted ? "aborted" : "unreachable";
+      return {
+        status,
+        rpcUrl,
+        latencyMs: elapsed(),
+        error: timedOut ? `Timed out after ${timeoutMs}ms` : error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async function requestAndDecode(): Promise<RpcHealthCheckResult> {
     const response = await fetcher(rpcUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -98,16 +131,5 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
     }
 
     return { status: "healthy", rpcUrl, chainId: parsed.chainId, chainIdHex: parsed.chainIdHex, latencyMs: elapsed() };
-  } catch (error) {
-    const status: RpcHealthStatus = timedOut ? "timeout" : signal?.aborted ? "aborted" : "unreachable";
-    return {
-      status,
-      rpcUrl,
-      latencyMs: elapsed(),
-      error: timedOut ? `Timed out after ${timeoutMs}ms` : error instanceof Error ? error.message : String(error),
-    };
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", onCallerAbort);
   }
 }
