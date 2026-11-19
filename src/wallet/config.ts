@@ -35,22 +35,45 @@ export function getRpcTransportUrls(
   return [...new Set(rpcUrls.map((currentRpcUrl) => getChainRpcUrl(currentRpcUrl, chain.id, localNode)))];
 }
 
-function createRpcTransport(chain: Chain): Transport {
-  const selectedRpcUrl = getResolvedRpcBaseUrl() || RPC_URL;
-  const rpcTransports = getRpcTransportUrls(chain, { rpcUrl: selectedRpcUrl }).map((rpcUrl) =>
-    http(rpcUrl, {
-      batch: !isLocalNode,
-      timeout: RPC_TRANSPORT_TIMEOUT_MS,
-    })
-  );
-
-  if (rpcTransports.length === 1) return rpcTransports[0];
-  return fallback(rpcTransports, { rank: false });
+function createRpcTransport(rpcUrl: string): Transport {
+  return http(rpcUrl, {
+    batch: !isLocalNode,
+    timeout: RPC_TRANSPORT_TIMEOUT_MS,
+  });
 }
 
-// Anvil doesn't support URLs like http://localhost:8545/31337
+/**
+ * Rebuilds the transport chain per request from the *current* RPC selection.
+ *
+ * Two things have to be deferred past module evaluation. wagmi memoizes the client it builds
+ * from these transports and this module is imported before `main.tsx` starts the health probe,
+ * so a chain captured at evaluation time keeps hitting the endpoint the probe has not replaced
+ * yet. And viem's `fallback` invokes every entry as a factory while the client is constructed,
+ * so its entries must still be factories rather than invoked transports.
+ */
+export function dynamicRpcTransport(createTransport: () => Transport[]): Transport {
+  const buildChain = (params: Parameters<Transport>[0]) => {
+    const factories = createTransport();
+    const [primary] = factories;
+    if (!primary) throw new Error("No RPC transport URL is available");
+
+    if (factories.length === 1) return primary(params);
+    return fallback(factories, { rank: false })(params);
+  };
+
+  return (params) => {
+    const initial = buildChain(params);
+    // The client holds this object for its lifetime, so resolve the selection again for each
+    // request instead of serving it from the snapshot captured above.
+    return { ...initial, request: (args: Parameters<typeof initial.request>[0]) => buildChain(params).request(args) };
+  };
+}
+
+// Anvil cannot serve URLs like http://localhost:8545/31337
 const transports = supportedChains.reduce<TransportsMap>((acc, chain) => {
-  acc[chain.id] = createRpcTransport(chain);
+  acc[chain.id] = dynamicRpcTransport(() =>
+    getRpcTransportUrls(chain, { rpcUrl: getResolvedRpcBaseUrl() || RPC_URL }).map((rpcUrl) => createRpcTransport(rpcUrl))
+  );
   return acc;
 }, {} as TransportsMap);
 
