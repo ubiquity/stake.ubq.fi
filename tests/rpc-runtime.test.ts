@@ -129,6 +129,40 @@ describe("initializeRpcRuntime", () => {
     expect(state.initialized).toBe(true);
   });
 
+  it("falls through to the next candidate when a body never finishes decoding", async () => {
+    const probed: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      probed.push(url);
+      if (url.startsWith("https://headers-only.example")) {
+        // Headers arrive, the body never does; only the deadline can release this probe.
+        return new Response(
+          new ReadableStream({
+            start() {
+              // Never enqueue or close.
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      return jsonResponse({ jsonrpc: "2.0", id: 1, result: "0x1" });
+    }) as typeof fetch;
+
+    await initializeRpcRuntime({
+      candidates: ["https://headers-only.example", "https://healthy.example"],
+      expectedChainId: 1,
+      localNode: false,
+      fetcher,
+    });
+
+    const state = getRpcRuntimeState();
+    expect(probed).toEqual(["https://headers-only.example/1", "https://healthy.example/1"]);
+    expect(state.resolvedRpcUrl).toBe("https://healthy.example");
+    expect(state.lastStatus).toBe("healthy");
+    expect(state.recentErrorCount).toBe(1);
+    expect(state.initialized).toBe(true);
+  });
+
   it("does not leak state from a superseded run", async () => {
     let releaseSlow: ((response: Response) => void) | undefined;
     const slowFetcher = (async () =>

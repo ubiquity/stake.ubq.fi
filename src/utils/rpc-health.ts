@@ -52,14 +52,30 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
 
   const controller = new AbortController();
   let timedOut = false;
+  let callerAborted = false;
+  let rejectDeadline: ((error: Error) => void) | undefined;
+
+  // The probe settles on this deadline rather than on the fetcher honoring `abort`: a fetcher
+  // may ignore the signal, or resolve headers and leave the body pending, in which case the
+  // decode below never settles and the caller would hang past its budget.
+  const deadline = new Promise<never>((_resolve, reject) => {
+    rejectDeadline = reject;
+  });
+
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
+    rejectDeadline?.(new Error(`Timed out after ${timeoutMs}ms`));
   }, timeoutMs);
-  const onCallerAbort = () => controller.abort();
+
+  const onCallerAbort = () => {
+    callerAborted = true;
+    controller.abort();
+    rejectDeadline?.(new Error("Health check was aborted by the caller"));
+  };
   signal?.addEventListener("abort", onCallerAbort);
 
-  try {
+  const probe = async (): Promise<RpcHealthCheckResult> => {
     const response = await fetcher(rpcUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -98,13 +114,17 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
     }
 
     return { status: "healthy", rpcUrl, chainId: parsed.chainId, chainIdHex: parsed.chainIdHex, latencyMs: elapsed() };
+  };
+
+  try {
+    return await Promise.race([probe(), deadline]);
   } catch (error) {
-    const status: RpcHealthStatus = timedOut ? "timeout" : signal?.aborted ? "aborted" : "unreachable";
+    const status: RpcHealthStatus = timedOut ? "timeout" : callerAborted ? "aborted" : "unreachable";
     return {
       status,
       rpcUrl,
       latencyMs: elapsed(),
-      error: timedOut ? `Timed out after ${timeoutMs}ms` : error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? error.message : String(error),
     };
   } finally {
     clearTimeout(timer);
