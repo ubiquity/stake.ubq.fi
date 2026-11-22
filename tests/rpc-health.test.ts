@@ -12,6 +12,11 @@ const hangingFetcher = ((_input: RequestInfo | URL, init?: RequestInit) =>
     init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
   })) as typeof fetch;
 
+// Resolves headers immediately, then returns a body that never emits or closes, while ignoring
+// the abort signal entirely. This is the shape that used to stall the probe past its deadline.
+const neverEndingBodyFetcher = (async () =>
+  new Response(new ReadableStream({ start() {} }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+
 describe("rpcHealthCheck", () => {
   it("returns a healthy result with the parsed chain id and latency", async () => {
     const result = await rpcHealthCheck("https://rpc.example", {
@@ -70,6 +75,22 @@ describe("rpcHealthCheck", () => {
 
     expect(result.status).toBe("timeout");
     expect(result.error).toContain("Timed out");
+  });
+
+  it("times out when the response body never finishes decoding", async () => {
+    const result = await rpcHealthCheck("https://rpc.example", { timeoutMs: 20, fetcher: neverEndingBodyFetcher });
+
+    expect(result.status).toBe("timeout");
+    expect(result.error).toContain("Timed out");
+  });
+
+  it("settles a never-ending body promptly instead of hanging", async () => {
+    const startedAt = Date.now();
+    const result = await rpcHealthCheck("https://rpc.example", { timeoutMs: 20, fetcher: neverEndingBodyFetcher });
+    const elapsed = Date.now() - startedAt;
+
+    expect(result.status).toBe("timeout");
+    expect(elapsed).toBeLessThan(1_000);
   });
 
   it("honors an already-aborted caller signal without fetching", async () => {

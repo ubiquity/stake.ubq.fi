@@ -33,6 +33,32 @@ const parseChainId = (value: unknown): { chainId: number; chainIdHex: string } |
   return { chainId: parsed, chainIdHex: value };
 };
 
+type RpcFetchOutcome = { kind: "http-error"; status: number } | { kind: "payload"; payload: RpcResponsePayload };
+
+/**
+ * Performs the request and fully decodes the body. Kept separate so the caller can race the
+ * complete operation against its deadline rather than just the response headers.
+ */
+const fetchAndDecode = async (fetcher: typeof fetch, rpcUrl: string, signal: AbortSignal): Promise<RpcFetchOutcome> => {
+  const response = await fetcher(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_chainId",
+      params: [],
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    return { kind: "http-error", status: response.status };
+  }
+
+  return { kind: "payload", payload: (await response.json()) as RpcResponsePayload };
+};
+
 /**
  * Probes an RPC endpoint with a minimal `eth_chainId` JSON-RPC call and a short bounded timeout.
  * The result is always typed; the probe never throws, so callers can safely count failures.
@@ -52,31 +78,37 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
 
   const controller = new AbortController();
   let timedOut = false;
+  let rejectDeadline: ((reason: Error) => void) | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    rejectDeadline = reject;
+  });
+
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
+    rejectDeadline?.(new Error(`Timed out after ${timeoutMs}ms`));
   }, timeoutMs);
-  const onCallerAbort = () => controller.abort();
+  const onCallerAbort = () => {
+    controller.abort();
+    rejectDeadline?.(new Error("Health check was aborted"));
+  };
   signal?.addEventListener("abort", onCallerAbort);
 
   try {
-    const response = await fetcher(rpcUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_chainId",
-        params: [],
-      }),
-      signal: controller.signal,
-    });
+    // The deadline has to cover the body decode as well as the headers. A fetcher that ignores
+    // the abort signal can resolve headers and then never finish its body, which would leave
+    // `response.json()` pending forever and stall the probe past its deadline.
+    const attempt = fetchAndDecode(fetcher, rpcUrl, controller.signal);
+    // A rejection that lands after the deadline has already won must not surface as unhandled.
+    attempt.catch(() => undefined);
 
-    if (!response.ok) {
-      return { status: "unreachable", rpcUrl, latencyMs: elapsed(), error: `HTTP ${response.status}` };
+    const outcome = await Promise.race([attempt, deadline]);
+
+    if (outcome.kind === "http-error") {
+      return { status: "unreachable", rpcUrl, latencyMs: elapsed(), error: `HTTP ${outcome.status}` };
     }
 
-    const payload = (await response.json()) as RpcResponsePayload;
+    const payload = outcome.payload;
     if (payload.error) {
       return { status: "rpc-error", rpcUrl, latencyMs: elapsed(), error: payload.error.message ?? "RPC responded with an error" };
     }
