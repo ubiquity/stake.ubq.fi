@@ -72,6 +72,26 @@ describe("rpcHealthCheck", () => {
     expect(result.error).toContain("Timed out");
   });
 
+  it("times out a headers-only response whose body never finishes", async () => {
+    const headersOnlyFetcher = (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("{"));
+            // Deliberately never close: response.json() would hang forever.
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+
+    const startedAt = Date.now();
+    const result = await rpcHealthCheck("https://rpc.example", { timeoutMs: 25, fetcher: headersOnlyFetcher });
+
+    expect(result.status).toBe("timeout");
+    expect(result.error).toContain("Timed out");
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
   it("honors an already-aborted caller signal without fetching", async () => {
     let calls = 0;
     const fetcher = (async () => {

@@ -26,6 +26,14 @@ type RpcResponsePayload = {
   result?: unknown;
 };
 
+/** Rejection used by the deadline race so a stalled body cannot hang the probe. */
+class RpcProbeDeadlineError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`Timed out after ${timeoutMs}ms`);
+    this.name = "RpcProbeDeadlineError";
+  }
+}
+
 const parseChainId = (value: unknown): { chainId: number; chainIdHex: string } | null => {
   if (typeof value !== "string" || !value.startsWith("0x")) return null;
   const parsed = Number.parseInt(value.slice(2), 16);
@@ -52,15 +60,23 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
 
   const controller = new AbortController();
   let timedOut = false;
+  let rejectOnDeadline: (reason: unknown) => void = () => {};
+  const deadline = new Promise<never>((_resolve, reject) => {
+    rejectOnDeadline = reject;
+  });
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
+    rejectOnDeadline(new RpcProbeDeadlineError(timeoutMs));
   }, timeoutMs);
+  // The deadline must cover the whole fetch-and-decode operation: an injected
+  // fetcher may ignore abort and resolve headers while its body never finishes.
+  const withDeadline = <T>(work: Promise<T>): Promise<T> => Promise.race([work, deadline]);
   const onCallerAbort = () => controller.abort();
   signal?.addEventListener("abort", onCallerAbort);
 
   try {
-    const response = await fetcher(rpcUrl, {
+    const response = await withDeadline(fetcher(rpcUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -70,13 +86,13 @@ export async function rpcHealthCheck(rpcUrl: string, options: RpcHealthCheckOpti
         params: [],
       }),
       signal: controller.signal,
-    });
+    }));
 
     if (!response.ok) {
       return { status: "unreachable", rpcUrl, latencyMs: elapsed(), error: `HTTP ${response.status}` };
     }
 
-    const payload = (await response.json()) as RpcResponsePayload;
+    const payload = (await withDeadline(response.json())) as RpcResponsePayload;
     if (payload.error) {
       return { status: "rpc-error", rpcUrl, latencyMs: elapsed(), error: payload.error.message ?? "RPC responded with an error" };
     }
