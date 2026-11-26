@@ -6,6 +6,21 @@ type StatusMessage = {
 };
 
 type StatusMessageAction = { type: "setSuccess"; message: string | null } | { type: "setError"; message: string | null } | { type: "clear" };
+export type { StatusMessageAction };
+
+/**
+ * Maps a transaction-receipt outcome to the status-message action it must dispatch.
+ *
+ * A reverted receipt is an error condition, so it must land on the error channel —
+ * never on the success channel, where it would otherwise survive (or resurrect as a
+ * stale notice) when the status is cleared before the next staking action.
+ */
+export function receiptOutcomeAction(receiptStatus: string, successMessage?: string): StatusMessageAction {
+  if (receiptStatus !== "success") {
+    return { type: "setError", message: "Transaction reverted" };
+  }
+  return { type: "setSuccess", message: successMessage || "Transaction confirmed" };
+}
 
 const StatusMessageStateContext = createContext<StatusMessage | null>(null);
 const StatusMessageDispatchContext = createContext<Dispatch<StatusMessageAction> | null>(null);
@@ -39,7 +54,7 @@ export function StatusMessageProvider({ children }: { children: React.ReactNode 
   );
 }
 
-function statusMessageReducer(state: StatusMessage, action: StatusMessageAction): StatusMessage {
+export function statusMessageReducer(state: StatusMessage, action: StatusMessageAction): StatusMessage {
   switch (action.type) {
     case "setSuccess":
       return { successMessage: action.message, errorMessage: null };

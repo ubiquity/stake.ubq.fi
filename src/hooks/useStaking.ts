@@ -4,7 +4,7 @@ import { waitForTransactionReceipt } from "viem/actions";
 import { stakingContract } from "../constants/contracts";
 import erc20Abi from "../abis/erc20";
 import { toValidAddress } from "../utils";
-import { useStatusMessageDispatch } from "../context/status-message";
+import { receiptOutcomeAction, useStatusMessageDispatch } from "../context/status-message";
 
 interface UseStakingParams {
   poolId: bigint;
@@ -64,7 +64,9 @@ export const useStaking = ({ poolId, userAddress, lpToken, isConnected, onTransa
 
     try {
       const receipt = await waitForTransactionReceipt(publicClient, { hash });
-      statusMessageDispatch({ type: "setSuccess", message: receipt.status === "success" ? successMessage || "Transaction confirmed" : "Transaction reverted" });
+      // Reverted receipts are reported on the error channel so a cleared status
+      // cannot leave (or re-surface) a stale revert notice from the success channel.
+      statusMessageDispatch(receiptOutcomeAction(receipt.status, successMessage));
     } catch (error) {
       statusMessageDispatch({ type: "setError", message: error instanceof Error ? error.message : "Transaction failed" });
     }
